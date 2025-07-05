@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finance Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link rel="manifest" href="data:application/manifest+json,{
+        &quot;name&quot;: &quot;Finance Tracker&quot;,
+        &quot;short_name&quot;: &quot;FinanceApp&quot;,
+        &quot;start_url&quot;: &quot;.&quot;,
+        &quot;display&quot;: &quot;standalone&quot;,
+        &quot;background_color&quot;: &quot;#0f172a&quot;,
+        &quot;theme_color&quot;: &quot;#d946ef&quot;,
+        &quot;description&quot;: &quot;A personal finance tracking application.&quot;,
+        &quot;icons&quot;: [
+            { &quot;src&quot;: &quot;https://placehold.co/192x192/d946ef/ffffff?text=FT&quot;, &quot;sizes&quot;: &quot;192x192&quot;, &quot;type&quot;: &quot;image/png&quot; },
+            { &quot;src&quot;: &quot;https://placehold.co/512x512/d946ef/ffffff?text=FT&quot;, &quot;sizes&quot;: &quot;512x512&quot;, &quot;type&quot;: &quot;image/png&quot; }
+        ]
+    }">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* slate-900 */
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc, query, serverTimestamp, writeBatch, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        window.firebase = {
+            initializeApp,
+            getAuth,
+            onAuthStateChanged,
+            createUserWithEmailAndPassword,
+            signInWithEmailAndPassword,
+            signOut,
+            setPersistence,
+            browserSessionPersistence,
+            browserLocalPersistence,
+            getFirestore,
+            collection,
+            addDoc,
+            onSnapshot,
+            doc,
+            deleteDoc,
+            updateDoc,
+            query,
+            serverTimestamp,
+            writeBatch,
+            Timestamp
+        };
+    </script>
+
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                const CACHE_NAME = 'finance-tracker-cache-v1';
+                const urlsToCache = ['/', '/index.html'];
+
+                self.addEventListener('install', event => {
+                    event.waitUntil(
+                        caches.open(CACHE_NAME).then(cache => {
+                            console.log('Opened cache');
+                            return cache.addAll(urlsToCache);
+                        })
+                    );
+                });
+
+                self.addEventListener('fetch', event => {
+                    event.respondWith(
+                        caches.match(event.request).then(response => {
+                            return response || fetch(event.request);
+                        })
+                    );
+                });
+            `;
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register(swUrl)
+                    .then(registration => console.log('ServiceWorker registration successful with scope: ', registration.scope))
+                    .catch(error => console.log('ServiceWorker registration failed: ', error));
+            });
+        }
+    </script>
+    
+    <script type="text/babel" data-presets="react">
+        const { useState, useEffect, useMemo, useCallback, createContext, useContext } = React;
+        
+        // --- Firebase Configuration & Context ---
+        const FirebaseContext = createContext(null);
+
+        // --- SVG Icons ---
+        const DashboardIcon = ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>;
+        const WalletIcon = ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"></path><path d="M3 5v14a2 2 0 0 0 2 2h16v-5h-2.43a1 1 0 0 1-.94-.66l-.86-2.68a1 1 0 0 1 .94-1.34H21V5Z"></path></svg>;
+        const LedgerIcon = ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>;
+        const CalendarIcon = ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>;
+        const ParametersIcon = ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>;
+        const ProfileIcon = ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>;
+        const PlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
+        const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
+        const EditIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>;
+        const CloseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
+        const MenuIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>;
+
+        // --- Helper Functions ---
+        const formatDateTime = (date) => date ? new Date(date).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        const toDateTimeLocalString = (date) => { const d = new Date(date); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+        const toDateString = (date) => new Date(date).toISOString().split('T')[0];
+        const isSameDay = (d1, d2) => d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+
+        // --- Default Data for New Users ---
+        const DEFAULT_CATEGORIES = [ { name: 'Salary', icon: '💼', type: 'income' }, { name: 'Food & Dining', icon: '🍔', type: 'expense' }, { name: 'Transportation', icon: '🚗', type: 'expense' }, { name: 'Shopping', icon: '🛒', type: 'expense' }, { name: 'Debt Payments', icon: '💳', type: 'expense' }, { name: 'Lending', icon: '💸', type: 'expense' }, ];
+        const DEFAULT_CURRENCIES = [ { name: 'USD' }, { name: 'EUR' } ];
+
+        // --- Firebase Provider & Hooks ---
+        const FirebaseProvider = ({ children }) => {
+            const [authData, setAuthData] = useState({ db: null, auth: null, user: null, isAuthReady: false, error: null });
+
+            useEffect(() => {
+                const { initializeApp, getAuth, onAuthStateChanged, getFirestore } = window.firebase;
+                try {
+                    const firebaseConfig = {
+
+                      apiKey: "AIzaSyBtoKxxiHh6tFjSRafLYp_kg_aPjsRex24",
+
+                      authDomain: "manager-29c83.firebaseapp.com",
+
+                      projectId: "manager-29c83",
+
+                      storageBucket: "manager-29c83.firebasestorage.app",
+
+                      messagingSenderId: "153887932249",
+
+                      appId: "1:153887932249:web:9063e023740b7b7574d648"
+
+                    };
+
+                    const app = initializeApp(firebaseConfig);
+                    const db = getFirestore(app);
+                    const auth = getAuth(app);
+
+                    const unsubscribe = onAuthStateChanged(auth, (user) => {
+                        setAuthData({ db, auth, user, isAuthReady: true, error: null });
+                    });
+                    return () => unsubscribe();
+                } catch (e) {
+                    console.error("Firebase initialization failed:", e);
+                    setAuthData({ db: null, auth: null, user: null, isAuthReady: true, error: "Could not connect to the database." });
+                }
+            }, []);
+
+            return <FirebaseContext.Provider value={authData}>{children}</FirebaseContext.Provider>;
+        };
+
+        const useCollection = (collectionName, defaultData = []) => {
+            const { db, user } = useContext(FirebaseContext);
+            const userId = user?.uid;
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                if (!db || !userId) {
+                    if(!userId) setData([]); // Clear data if user logs out
+                    setLoading(false);
+                    return;
+                };
+                const { query, collection, onSnapshot, writeBatch, doc } = window.firebase;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                setLoading(true);
+                const collectionPath = `/artifacts/${appId}/users/${userId}/${collectionName}`;
+                const q = query(collection(db, collectionPath));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const items = snapshot.docs.map(doc => {
+                        const docData = doc.data();
+                        for (const key in docData) {
+                            if (docData[key]?.toDate) {
+                                docData[key] = docData[key].toDate();
+                            }
+                        }
+                        return { id: doc.id, ...docData };
+                    });
+                    
+                    if (items.length === 0 && !snapshot.metadata.hasPendingWrites && defaultData.length > 0) {
+                        const batch = writeBatch(db);
+                        defaultData.forEach(item => {
+                            const docRef = doc(collection(db, collectionPath));
+                            batch.set(docRef, item);
+                        });
+                        batch.commit().catch(e => console.error("Failed to add default data", e));
+                    } else {
+                        setData(items);
+                    }
+                    setLoading(false);
+                }, (error) => {
+                    console.error(`Error fetching ${collectionName}:`, error);
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, [db, userId]);
+
+            return { data, loading };
+        };
+
+        // --- Main App Component ---
+        function App() {
+            return (
+                <FirebaseProvider>
+                    <AppContent />
+                </FirebaseProvider>
+            );
+        }
+
+        function AppContent() {
+            const { db, auth, user, isAuthReady, error } = useContext(FirebaseContext);
+            const userId = user?.uid;
+            
+            const { data: wallets, loading: walletsLoading } = useCollection('wallets');
+            const { data: categories, loading: categoriesLoading } = useCollection('categories', DEFAULT_CATEGORIES);
+            const { data: transactions, loading: transactionsLoading } = useCollection('transactions');
+            const { data: debts, loading: debtsLoading } = useCollection('debts');
+            const { data: currencies, loading: currenciesLoading } = useCollection('currencies', DEFAULT_CURRENCIES);
+            const { data: budgets, loading: budgetsLoading } = useCollection('budgets');
+
+            const [activeView, setActiveView] = useState('dashboard');
+            const [modalStack, setModalStack] = useState([]);
+            const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+            const isLoading = walletsLoading || categoriesLoading || transactionsLoading || debtsLoading || currenciesLoading || budgetsLoading;
+
+            const walletCalculations = useMemo(() => {
+                const balances = {};
+                const lastActivity = {};
+                wallets.forEach(w => { balances[w.id] = w.initialBalance || 0; lastActivity[w.id] = w.createdAt; });
+                transactions.forEach(t => { if (balances[t.walletId] !== undefined) { balances[t.walletId] += (t.type === 'income' ? t.amount : -t.amount); if (new Date(t.date) > new Date(lastActivity[t.walletId])) { lastActivity[t.walletId] = t.date; } } });
+                return { balances, lastActivity };
+            }, [wallets, transactions]);
+
+            const openModal = (type, data = {}, options = {}) => { setModalStack(prev => [...prev, { type, data, options }]); };
+            const closeModal = () => { setModalStack(prev => prev.slice(0, -1)); };
+
+            const handleSave = async (itemType, data) => {
+                if (!db || !userId) return;
+                const collectionName = `${itemType}s`;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const collectionPath = `/artifacts/${appId}/users/${userId}/${collectionName}`;
+                const { id, ...payload } = data;
+                const { serverTimestamp, updateDoc, doc, addDoc, collection, Timestamp } = window.firebase;
+
+                for (const key in payload) {
+                    if (payload[key] instanceof Date) {
+                        payload[key] = Timestamp.fromDate(payload[key]);
+                    }
+                }
+                
+                const currentModal = modalStack[modalStack.length - 1];
+                const { onSaveSuccess } = currentModal?.options || {};
+
+                try {
+                    let savedItem;
+                    if (id) {
+                        await updateDoc(doc(db, collectionPath, id), payload);
+                        savedItem = { id, ...data };
+                    } else {
+                        const docRef = await addDoc(collection(db, collectionPath), { ...payload, createdAt: serverTimestamp() });
+                        savedItem = { id: docRef.id, ...data };
+                    }
+                    closeModal();
+                    if (onSaveSuccess) { onSaveSuccess(savedItem); }
+                } catch (e) {
+                    console.error("Error saving item:", e);
+                    alert("Failed to save item.");
+                }
+            };
+            
+            const handleSaveDebt = async (debtData, createTransaction) => {
+                if (!db || !userId) return;
+                const { writeBatch, doc, collection, serverTimestamp, Timestamp } = window.firebase;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const batch = writeBatch(db);
+
+                const isEditing = !!debtData.id;
+                const debtRef = isEditing ? doc(db, `/artifacts/${appId}/users/${userId}/debts`, debtData.id) : doc(collection(db, `/artifacts/${appId}/users/${userId}/debts`));
+                
+                const debtPayload = { ...debtData };
+                if (debtPayload.date instanceof Date) debtPayload.date = Timestamp.fromDate(debtPayload.date);
+                if (debtPayload.deadline instanceof Date) debtPayload.deadline = Timestamp.fromDate(debtPayload.deadline);
+
+                batch.set(debtRef, debtPayload);
+
+                if (!isEditing && createTransaction.enabled) {
+                    const lendingCategory = categories.find(c => c.name === 'Lending');
+                    if(!lendingCategory) { alert("'Lending' category not found. Please create it in Parameters."); return; }
+                    
+                    const transRef = doc(collection(db, `/artifacts/${appId}/users/${userId}/transactions`));
+                    const newTransaction = {
+                        description: `Loan to ${debtData.person}`, amount: debtData.total, type: 'expense', walletId: createTransaction.walletId, categoryId: lendingCategory.id, date: debtData.date, details: `Initial amount for debt: ${debtData.name}`, createdAt: serverTimestamp()
+                    };
+                    batch.set(transRef, newTransaction);
+                }
+
+                try { await batch.commit(); closeModal(); } 
+                catch(e) { console.error("Error saving debt and transaction:", e); alert("Failed to save debt."); }
+            };
+
+            const handleDebtPayment = async (paymentData) => {
+                if (!db || !userId) return;
+                const { writeBatch, doc, collection, serverTimestamp, Timestamp } = window.firebase;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const { debtId, walletId, amount, date, attachment } = paymentData;
+                const debt = debts.find(d => d.id === debtId);
+                if(!debt) return;
+
+                const debtPaymentCategory = categories.find(c => c.name === 'Debt Payments');
+                if(!debtPaymentCategory) { alert("'Debt Payments' category not found. Please create it in Parameters."); return; }
+                
+                const batch = writeBatch(db);
+
+                const transRef = doc(collection(db, `/artifacts/${appId}/users/${userId}/transactions`));
+                const newTransaction = {
+                    description: `Payment for ${debt.name}`, amount, type: debt.type === 'owedByMe' ? 'expense' : 'income', walletId, categoryId: debtPaymentCategory.id, date: Timestamp.fromDate(date), details: `Payment related to debt with ${debt.person}`, attachment, createdAt: serverTimestamp()
+                };
+                batch.set(transRef, newTransaction);
+
+                const debtRef = doc(db, `/artifacts/${appId}/users/${userId}/debts`, debtId);
+                batch.update(debtRef, { paid: debt.paid + amount });
+                
+                try { await batch.commit(); closeModal(); } 
+                catch(e) { console.error("Error processing debt payment:", e); alert("Failed to process payment."); }
+            };
+
+            const handleDelete = async (type, id) => {
+                if (!window.confirm(`Are you sure you want to delete this ${type}?`)) return;
+                
+                if (type === 'category') { if (transactions.some(t => t.categoryId === id)) { alert("Cannot delete category. It is currently in use by one or more transactions."); return; } }
+                if (type === 'currency') { const currencyToDelete = currencies.find(c => c.id === id)?.name; if (wallets.some(w => w.currency === currencyToDelete) || debts.some(d => d.currency === currencyToDelete)) { alert("Cannot delete currency. It is in use by a wallet or debt."); return; } }
+                
+                try {
+                    const { doc, deleteDoc } = window.firebase;
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/${type}s`, id));
+                } catch(e) {
+                    console.error("Error deleting item:", e);
+                    alert("Failed to delete item.");
+                }
+            };
+
+            if (!isAuthReady || isLoading) {
+                return <div className="bg-slate-900 min-h-screen flex flex-col items-center justify-center text-center p-4"><div className="animate-spin rounded-full h-24 w-24 border-t-2 border-b-2 border-fuchsia-500 mb-6"></div><p className="text-xl font-semibold text-gray-300">Loading your secure data...</p></div>;
+            }
+            if (error) {
+                return <div className="bg-slate-900 min-h-screen flex flex-col items-center justify-center text-center p-4"><div className="text-5xl mb-6">😞</div><p className="text-xl font-semibold text-red-400">{error}</p></div>
+            }
+
+            if (!user) {
+                return <ProfileView auth={auth} />;
+            }
+
+            const renderView = () => {
+                const props = { openModal, handleDelete };
+                switch (activeView) {
+                    case 'dashboard': return <DashboardView wallets={wallets} transactions={transactions} debts={debts} categories={categories} budgets={budgets} calculations={walletCalculations} />;
+                    case 'money': return <MoneyView wallets={wallets} calculations={walletCalculations} transactions={transactions} categories={categories} {...props} />;
+                    case 'ledger': return <LedgerView debts={debts} {...props} />;
+                    case 'calendar': return <CalendarView transactions={transactions} wallets={wallets} categories={categories} openModal={openModal} />;
+                    case 'parameters': return <ParametersView categories={categories} currencies={currencies} budgets={budgets} {...props} />;
+                    case 'profile': return <ProfileView auth={auth} user={user} />;
+                    default: return <DashboardView wallets={wallets} transactions={transactions} debts={debts} categories={categories} budgets={budgets} calculations={walletCalculations} />;
+                }
+            };
+
+            return (
+                <div className="bg-slate-900 min-h-screen font-sans text-gray-200 flex">
+                    <Sidebar activeView={activeView} setActiveView={setActiveView} isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
+                    <div className="flex-1 flex flex-col transition-all duration-300 lg:ml-64">
+                         <header className="lg:hidden p-4 flex justify-between items-center bg-slate-900/80 backdrop-blur-sm sticky top-0 z-40">
+                            <h1 className="text-xl font-bold text-white">Finance Tracker</h1>
+                            <button onClick={() => setIsSidebarOpen(true)} className="text-white"><MenuIcon /></button>
+                        </header>
+                        <main className="flex-1 overflow-y-auto">
+                            {renderView()}
+                        </main>
+                    </div>
+                    {modalStack.map((modal, index) => (
+                        <Modal key={index} isOpen={true} onClose={closeModal} isSubModal={index > 0}>
+                            {modal.type === 'wallet' && <WalletForm data={modal.data} onSave={handleSave} currencies={currencies} openModal={openModal} />}
+                            {modal.type === 'transaction' && <TransactionForm data={modal.data} wallets={wallets} categories={categories} onSave={handleSave} openModal={openModal} />}
+                            {modal.type === 'transactionDetail' && <TransactionDetailView transaction={modal.data} wallets={wallets} categories={categories} openModal={openModal} />}
+                            {modal.type === 'category' && <CategoryForm data={modal.data} onSave={handleSave} />}
+                            {modal.type === 'currency' && <CurrencyForm data={modal.data} onSave={handleSave} />}
+                            {modal.type === 'budget' && <BudgetForm data={modal.data} onSave={handleSave} categories={categories} currencies={currencies} />}
+                            {modal.type === 'debt' && <DebtForm data={modal.data} onSave={handleSaveDebt} currencies={currencies} wallets={wallets} balances={walletCalculations.balances} openModal={openModal} />}
+                            {modal.type === 'debtPayment' && <DebtPaymentForm debts={debts} wallets={wallets} balances={walletCalculations.balances} onSave={handleDebtPayment} />}
+                        </Modal>
+                    ))}
+                </div>
+            );
+        }
+        
+        // --- The rest of the components (Sidebar, Page, Views, Forms, etc.) go here ---
+        const Sidebar = ({ activeView, setActiveView, isOpen, setIsOpen }) => {
+            const navItems = [
+                { id: 'dashboard', label: 'Dashboard', Icon: DashboardIcon },
+                { id: 'money', label: 'Wallets', Icon: WalletIcon },
+                { id: 'ledger', label: 'Ledger', Icon: LedgerIcon },
+                { id: 'calendar', label: 'Calendar', Icon: CalendarIcon },
+                { id: 'parameters', label: 'Parameters', Icon: ParametersIcon },
+                { id: 'profile', label: 'Profile', Icon: ProfileIcon },
+            ];
+            return (
+                <>
+                    <div onClick={() => setIsOpen(false)} className={`fixed inset-0 bg-black/60 z-50 lg:hidden transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}></div>
+                    <aside className={`fixed top-0 left-0 h-full w-64 bg-slate-800/80 backdrop-blur-lg p-6 flex flex-col z-50 transform transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                        <h1 className="text-2xl font-bold text-white mb-10">Finance Tracker</h1>
+                        <nav className="flex flex-col space-y-2">
+                            {navItems.map(item => <NavItem key={item.id} {...item} activeView={activeView} setActiveView={setActiveView} />)}
+                        </nav>
+                    </aside>
+                </>
+            );
+        };
+
+        const NavItem = ({ id, label, Icon, activeView, setActiveView }) => { 
+            const isActive = activeView === id;
+            return (
+                <button onClick={() => setActiveView(id)} className={`flex items-center space-x-3 p-3 rounded-xl transition-all duration-200 ${isActive ? 'bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/30' : 'text-gray-400 hover:bg-white/10'}`}>
+                    <Icon className="w-6 h-6" />
+                    <span className="font-semibold">{label}</span>
+                </button>
+            );
+        };
+
+        const Page = ({ title, children, actionButton }) => (<div className="p-4 md:p-8 animate-fade-in"><div className="flex justify-between items-center mb-6"><h1 className="text-3xl font-bold text-white">{title}</h1>{actionButton}</div>{children}</div>);
+        const MoneyView = ({ wallets, calculations, transactions, categories, openModal, handleDelete }) => { const sortedTransactions = useMemo(() => [...transactions].sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0)), [transactions]); const getCategory = useCallback((id) => categories.find(c => c.id === id) || { icon: '❓', name: 'Uncategorized' }, [categories]); const getWallet = useCallback((id) => wallets.find(w => w.id === id) || { name: 'Unknown', currency: 'USD' }, [wallets]); return (<Page title="My Wallets" actionButton={<button onClick={() => openModal('transaction')} className="bg-fuchsia-500 hover:bg-fuchsia-600 text-white font-bold py-2 px-4 rounded-xl transition flex items-center shadow-lg shadow-fuchsia-500/30"><PlusIcon /><span className="ml-2 hidden sm:inline">Add Transaction</span></button>}><div className="space-y-8"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{wallets.map(wallet => (<GlassCard key={wallet.id}><div className="flex items-start justify-between"><div className="flex items-center"><span className="text-3xl mr-4">{wallet.icon}</span><div><p className="font-semibold text-white">{wallet.name}</p><p className="text-xs text-gray-400">Last activity: {formatDateTime(wallet.createdAt)}</p></div></div><button onClick={() => openModal('wallet', wallet)} className="text-gray-500 hover:text-cyan-400"><EditIcon /></button></div><p className="text-2xl font-bold text-right mt-4 text-green-400">{calculations.balances[wallet.id]?.toFixed(2)} <span className="text-sm text-gray-500">{wallet.currency}</span></p></GlassCard>))}<button onClick={() => openModal('wallet')} className="border-2 border-dashed border-gray-600 rounded-xl flex items-center justify-center text-gray-400 hover:bg-white/10 hover:text-white transition h-full min-h-[110px]"><PlusIcon /><span className="ml-2">Add Wallet</span></button></div><div><h2 className="text-xl font-bold text-gray-300 mb-4">Recent History</h2><div className="space-y-3">{sortedTransactions.slice(0, 5).map(t => { const category = getCategory(t.categoryId); const wallet = getWallet(t.walletId); const isIncome = t.type === 'income'; return (<button key={t.id} onClick={() => openModal('transactionDetail', t)} className="w-full text-left"><GlassCard padding="p-3"><div className="flex items-center justify-between"><div className="flex items-center"><span className="text-2xl mr-4">{category.icon}</span><div><p className="font-semibold text-white">{t.description}</p><p className="text-xs text-gray-400">{category.name} &bull; {wallet.name}</p></div></div><p className={`font-bold ${isIncome ? 'text-green-400' : 'text-red-400'}`}>{isIncome ? '+' : '-'}{t.amount.toFixed(2)} <span className="text-xs text-gray-500">{wallet.currency}</span></p></div></GlassCard></button>);})}</div></div></div></Page>);};
+        const CalendarView = ({ transactions, wallets, categories, openModal }) => {
+            const [currentDate, setCurrentDate] = useState(new Date());
+            const [selectedDate, setSelectedDate] = useState(new Date());
+            const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+            const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+            const startingDay = firstDayOfMonth.getDay();
+            const transactionsByDay = useMemo(() => { const map = new Map(); transactions.forEach(t => { const dateStr = new Date(t.date).toDateString(); if (!map.has(dateStr)) map.set(dateStr, []); map.get(dateStr).push(t); }); return map; }, [transactions]);
+            const selectedDayTransactions = useMemo(() => { return transactionsByDay.get(selectedDate.toDateString())?.sort((a,b) => new Date(b.date) - new Date(a.date)) || []; }, [selectedDate, transactionsByDay]);
+            const changeMonth = (offset) => { setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + offset, 1)); };
+            const getCategory = useCallback((id) => categories.find(c => c.id === id) || { icon: '❓', name: 'Uncategorized' }, [categories]);
+            const getWallet = useCallback((id) => wallets.find(w => w.id === id) || { name: 'Unknown', currency: 'USD' }, [wallets]);
+            return (<Page title="Calendar"><GlassCard><div className="flex items-center justify-between mb-4"><button onClick={() => changeMonth(-1)} className="p-2 rounded-full hover:bg-white/10">&lt;</button><h2 className="text-xl font-bold text-white">{currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</h2><button onClick={() => changeMonth(1)} className="p-2 rounded-full hover:bg-white/10">&gt;</button></div><div className="grid grid-cols-7 gap-1 text-center text-xs text-gray-400 mb-2">{['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <div key={`${day}-${index}`}>{day}</div>)}</div><div className="grid grid-cols-7 gap-1">{Array.from({ length: startingDay }).map((_, i) => <div key={`empty-${i}`}></div>)}{Array.from({ length: daysInMonth }).map((_, day) => { const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day + 1); const isToday = isSameDay(date, new Date()); const isSelected = isSameDay(date, selectedDate); const hasTransactions = transactionsByDay.has(date.toDateString()); return (<button key={day} onClick={() => setSelectedDate(date)} className={`relative w-full aspect-square rounded-full flex items-center justify-center transition-colors ${isSelected ? 'bg-fuchsia-500 text-white' : 'hover:bg-white/10'} ${isToday ? 'border-2 border-fuchsia-400' : ''}`}>{day + 1}{hasTransactions && <div className="absolute bottom-1.5 w-1 h-1 bg-fuchsia-400 rounded-full"></div>}</button>);})}</div></GlassCard><div className="mt-6"><h3 className="text-lg font-bold text-white mb-4">Activity on {selectedDate.toLocaleDateString('default', { month: 'long', day: 'numeric' })}</h3><div className="space-y-3">{selectedDayTransactions.length > 0 ? selectedDayTransactions.map(t => { const category = getCategory(t.categoryId); const wallet = getWallet(t.walletId); const isIncome = t.type === 'income'; return (<button key={t.id} onClick={() => openModal('transactionDetail', t)} className="w-full text-left"><GlassCard padding="p-3"><div className="flex items-center justify-between"><div className="flex items-center"><span className="text-2xl mr-4">{category.icon}</span><div><p className="font-semibold text-white">{t.description}</p><p className="text-xs text-gray-400">{formatDateTime(t.date)}</p></div></div><p className={`font-bold ${isIncome ? 'text-green-400' : 'text-red-400'}`}>{isIncome ? '+' : '-'}{t.amount.toFixed(2)} <span className="text-xs text-gray-500">{wallet.currency}</span></p></div></GlassCard></button>)}) : <p className="text-gray-400 text-center py-4">No transactions on this day.</p>}</div></div></Page>);
+        };
+        const ParametersView = ({ categories, currencies, budgets, openModal, handleDelete }) => (
+            <Page title="Parameters">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <section>
+                        <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold text-gray-300">Manage Categories</h2><button onClick={() => openModal('category')} className="text-fuchsia-400 hover:text-fuchsia-300 font-bold py-2 px-4 rounded-xl transition flex items-center"><PlusIcon /> <span className="ml-2">Add</span></button></div>
+                        <div className="space-y-3">
+                            {categories.map(cat => (<GlassCard key={cat.id} padding="p-3"><div className="flex items-center justify-between"><div className="flex items-center"><span className="text-2xl mr-3">{cat.icon}</span><span className={`font-semibold ${cat.type === 'income' ? 'text-green-400' : 'text-red-400'}`}>{cat.name}</span></div><div className="flex items-center space-x-2"><button onClick={() => openModal('category', cat)} className="text-gray-500 hover:text-cyan-400"><EditIcon /></button><button onClick={() => handleDelete('category', cat.id)} className="text-gray-500 hover:text-red-500"><TrashIcon /></button></div></div></GlassCard>))}
+                        </div>
+                    </section>
+                    <section>
+                        <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold text-gray-300">Manage Currencies</h2><button onClick={() => openModal('currency')} className="text-fuchsia-400 hover:text-fuchsia-300 font-bold py-2 px-4 rounded-lg transition flex items-center"><PlusIcon /> <span className="ml-2">Add</span></button></div>
+                        <div className="space-y-3">
+                            {currencies.map(cur => (<GlassCard key={cur.id} padding="p-3"><div className="flex items-center justify-between"><span className="font-semibold text-white">{cur.name}</span><div className="flex items-center space-x-2"><button onClick={() => openModal('currency', cur)} className="text-gray-500 hover:text-cyan-400"><EditIcon /></button><button onClick={() => handleDelete('currency', cur.id)} className="text-gray-500 hover:text-red-500"><TrashIcon /></button></div></div></GlassCard>))}
+                        </div>
+                    </section>
+                     <section className="lg:col-span-2">
+                        <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold text-gray-300">Manage Budgets</h2><button onClick={() => openModal('budget')} className="text-fuchsia-400 hover:text-fuchsia-300 font-bold py-2 px-4 rounded-lg transition flex items-center"><PlusIcon /> <span className="ml-2">Add</span></button></div>
+                        <div className="space-y-3">
+                            {budgets.map(b => {
+                                const category = categories.find(c => c.id === b.categoryId);
+                                let periodText = b.period;
+                                if(b.period === 'every_x_days') periodText = `every ${b.customInterval} days`;
+                                if(b.period === 'every_x_weeks') periodText = `every ${b.customInterval} weeks`;
+                                return (<GlassCard key={b.id} padding="p-3"><div className="flex items-center justify-between"><div><span className="font-semibold">{category?.name || '...'}</span><span className="text-sm text-gray-400"> - ${b.limit} {b.currency} / {periodText}</span></div><div className="flex items-center space-x-2"><button onClick={() => openModal('budget', b)} className="text-gray-500 hover:text-cyan-400"><EditIcon /></button><button onClick={() => handleDelete('budget', b.id)} className="text-gray-500 hover:text-red-500"><TrashIcon /></button></div></div></GlassCard>)
+                            })}
+                        </div>
+                    </section>
+                </div>
+            </Page>
+        );
+        const LedgerView = ({ debts, openModal, handleDelete }) => {
+            const [activeTab, setActiveTab] = useState('owedByMe');
+            const debtsOwedByMe = debts.filter(d => d.type === 'owedByMe');
+            const debtsOwedToMe = debts.filter(d => d.type === 'owedToMe');
+            
+            const DebtList = ({ debtList }) => (
+                <div className="space-y-4">
+                    {debtList.length > 0 ? debtList.map(debt => {
+                        const isFullyPaid = debt.paid >= debt.total;
+                        const percentage = debt.total > 0 ? (debt.paid / debt.total) * 100 : 100;
+                        const remaining = debt.total - debt.paid;
+                        return (
+                            <GlassCard key={debt.id} extraClasses={isFullyPaid ? 'opacity-60' : ''}>
+                                {isFullyPaid && <div className="absolute top-2 right-2 text-xs bg-green-500/80 text-white font-bold px-2 py-1 rounded-full">Paid</div>}
+                                <div className="flex justify-between items-start mb-2"><div><p className="font-semibold text-white">{debt.name}</p><p className={`text-sm ${debt.type === 'owedByMe' ? 'text-red-400' : 'text-green-400'}`}>{debt.type === 'owedByMe' ? 'Owed to:' : 'Owed by:'} {debt.person}</p></div><div className="flex items-center space-x-2"><button onClick={() => openModal('debt', debt)} className="text-gray-500 hover:text-cyan-400"><EditIcon /></button><button onClick={() => handleDelete('debt', debt.id)} className="text-gray-500 hover:text-red-500"><TrashIcon /></button></div></div>
+                                <div className="w-full bg-gray-700/50 rounded-full h-2.5 my-2"><div className={`${debt.type === 'owedByMe' ? 'bg-red-500' : 'bg-green-500'} h-2.5 rounded-full`} style={{ width: `${percentage}%` }}></div></div>
+                                <div className="flex justify-between items-end mt-2"><p className="text-sm text-gray-400">Paid ${debt.paid.toFixed(2)} of ${debt.total.toFixed(2)}</p><p className="text-lg font-bold text-white">{debt.type === 'owedByMe' ? '-' : '+'}{remaining.toFixed(2)} <span className="text-sm text-gray-500">{debt.currency}</span></p></div>
+                                {debt.deadline && <p className="text-xs text-amber-400 mt-2">Deadline: {new Date(debt.deadline).toLocaleDateString()}</p>}
+                            </GlassCard>
+                        );
+                    }) : <p className="text-gray-400 text-center py-4">No debts here.</p>}
+                </div>
+            );
+
+            return (
+                <Page title="Ledger" actionButton={<button onClick={() => openModal('debtPayment')} className="bg-fuchsia-500 hover:bg-fuchsia-600 text-white font-bold py-2 px-4 rounded-xl transition flex items-center shadow-lg shadow-fuchsia-500/30"><PlusIcon /><span className="ml-2 hidden sm:inline">Add Payment</span></button>}>
+                    <div className="flex border-b border-gray-700 mb-6"><button onClick={() => setActiveTab('owedByMe')} className={`px-4 py-2 text-lg font-semibold border-b-2 ${activeTab === 'owedByMe' ? 'border-red-500 text-white' : 'border-transparent text-gray-500'}`}>I Owe</button><button onClick={() => setActiveTab('owedToMe')} className={`px-4 py-2 text-lg font-semibold border-b-2 ${activeTab === 'owedToMe' ? 'border-green-500 text-white' : 'border-transparent text-gray-500'}`}>Owed To Me</button></div>
+                    <div className="flex justify-end mb-4"><button onClick={() => openModal('debt')} className="text-fuchsia-400 hover:text-fuchsia-300 font-bold py-2 px-4 rounded-lg transition flex items-center"><PlusIcon /><span className="ml-2">Add New Debt</span></button></div>
+                    {activeTab === 'owedByMe' && <DebtList debtList={debtsOwedByMe} />}
+                    {activeTab === 'owedToMe' && <DebtList debtList={debtsOwedToMe} />}
+                </Page>
+            );
+        };
+        const DashboardView = ({ wallets, transactions, debts, categories, budgets, calculations }) => {
+            const summaryByCurrency = useMemo(() => {
+                const summary = {};
+
+                wallets.forEach(w => {
+                    if (!summary[w.currency]) {
+                        summary[w.currency] = { balance: 0, income: 0, expense: 0, owedByMe: 0, owedToMe: 0 };
+                    }
+                    summary[w.currency].balance += calculations.balances[w.id] || 0;
+                });
+
+                transactions.forEach(t => {
+                    const wallet = wallets.find(w => w.id === t.walletId);
+                    if (wallet) {
+                        if (!summary[wallet.currency]) summary[wallet.currency] = { balance: 0, income: 0, expense: 0, owedByMe: 0, owedToMe: 0 };
+                        if (t.type === 'income') summary[wallet.currency].income += t.amount;
+                        else summary[wallet.currency].expense += t.amount;
+                    }
+                });
+                
+                debts.forEach(d => {
+                    if (!summary[d.currency]) summary[d.currency] = { balance: 0, income: 0, expense: 0, owedByMe: 0, owedToMe: 0 };
+                    const remaining = d.total - d.paid;
+                    if (d.type === 'owedByMe') summary[d.currency].owedByMe += remaining;
+                    else summary[d.currency].owedToMe += remaining;
+                });
+
+                return summary;
+            }, [wallets, transactions, debts, calculations]);
+            
+            const budgetStatus = useMemo(() => {
+                const now = new Date();
+                
+                return budgets.map(budget => {
+                    let startOfPeriod, endOfPeriod;
+                    const budgetStart = new Date(budget.appliesOn);
+                    if (now < budgetStart) return { ...budget, spent: 0, periodText: 'Starts ' + toDateString(budgetStart) };
+
+                    switch(budget.period) {
+                        case 'daily': {
+                            startOfPeriod = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                            endOfPeriod = new Date(startOfPeriod.getTime() + 24 * 60 * 60 * 1000 - 1);
+                            break;
+                        }
+                        case 'weekly': {
+                            const firstDayOfWeek = now.getDate() - now.getDay();
+                            startOfPeriod = new Date(now.getFullYear(), now.getMonth(), firstDayOfWeek);
+                            endOfPeriod = new Date(startOfPeriod.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+                            break;
+                        }
+                        case 'yearly': {
+                            startOfPeriod = new Date(now.getFullYear(), 0, 1);
+                            endOfPeriod = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+                            break;
+                        }
+                        case 'custom_range': {
+                            startOfPeriod = new Date(budget.startDate);
+                            endOfPeriod = new Date(budget.endDate);
+                            break;
+                        }
+                         case 'every_x_days': {
+                            const daysSince = Math.floor((now - budgetStart) / (1000 * 60 * 60 * 24));
+                            const periodsPassed = Math.floor(daysSince / budget.customInterval);
+                            startOfPeriod = new Date(budgetStart.getTime() + periodsPassed * budget.customInterval * 1000 * 60 * 60 * 24);
+                            endOfPeriod = new Date(startOfPeriod.getTime() + budget.customInterval * 1000 * 60 * 60 * 24 - 1);
+                            break;
+                        }
+                        case 'every_x_weeks': {
+                            const daysSince = Math.floor((now - budgetStart) / (1000 * 60 * 60 * 24));
+                            const periodsPassed = Math.floor(daysSince / (7 * budget.customInterval));
+                            startOfPeriod = new Date(budgetStart.getTime() + periodsPassed * 7 * budget.customInterval * 1000 * 60 * 60 * 24);
+                            endOfPeriod = new Date(startOfPeriod.getTime() + 7 * budget.customInterval * 1000 * 60 * 60 * 24 - 1);
+                            break;
+                        }
+                        default: { // monthly
+                            startOfPeriod = new Date(now.getFullYear(), now.getMonth(), 1);
+                            endOfPeriod = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                        }
+                    }
+
+                    const spent = transactions
+                        .filter(t => {
+                            const wallet = wallets.find(w => w.id === t.walletId);
+                            return t.categoryId === budget.categoryId && 
+                                   wallet?.currency === budget.currency &&
+                                   new Date(t.date) >= startOfPeriod && 
+                                   new Date(t.date) <= endOfPeriod
+                        })
+                        .reduce((sum, t) => sum + t.amount, 0);
+                    return { ...budget, spent };
+                });
+            }, [budgets, transactions, wallets]);
+
+            const DonutChart = ({ income, expense, currency }) => {
+                const total = income + expense;
+                const incomePercent = total > 0 ? (income / total) * 100 : 0;
+                const expensePercent = total > 0 ? (expense / total) * 100 : 0;
+                const [hovered, setHovered] = useState(null);
+
+                const strokeWidth = 10;
+                const radius = 60;
+                const circumference = 2 * Math.PI * radius;
+                const incomeStroke = (incomePercent / 100) * circumference;
+                const expenseStroke = (expensePercent / 100) * circumference;
+
+                return (
+                    <div className="flex flex-col md:flex-row items-center justify-center gap-8">
+                        <div className="relative w-48 h-48">
+                            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 140 140">
+                                <circle cx="70" cy="70" r={radius} fill="transparent" stroke="#374151" strokeWidth={strokeWidth} />
+                                <circle
+                                    cx="70" cy="70" r={radius} fill="transparent"
+                                    stroke="#10b981" strokeWidth={strokeWidth}
+                                    strokeDasharray={`${incomeStroke} ${circumference}`}
+                                    className={`transition-all duration-300 ${hovered === 'income' ? 'scale-105' : ''}`}
+                                    style={{ transformOrigin: 'center' }}
+                                />
+                                <circle
+                                    cx="70" cy="70" r={radius} fill="transparent"
+                                    stroke="#ef4444" strokeWidth={strokeWidth}
+                                    strokeDasharray={`${expenseStroke} ${circumference}`}
+                                    strokeDashoffset={-incomeStroke}
+                                     className={`transition-all duration-300 ${hovered === 'expense' ? 'scale-105' : ''}`}
+                                     style={{ transformOrigin: 'center' }}
+                                />
+                            </svg>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                <span className="text-xs text-gray-400">Net Worth</span>
+                                <span className="text-2xl font-bold text-white">{summaryByCurrency[currency]?.balance.toFixed(2)}</span>
+                                <span className="text-sm text-gray-500">{currency}</span>
+                            </div>
+                        </div>
+                        <div className="flex flex-col space-y-2">
+                            <div onMouseEnter={() => setHovered('income')} onMouseLeave={() => setHovered(null)} className="flex items-center space-x-2 cursor-pointer">
+                                <div className="w-4 h-4 rounded-full bg-emerald-500"></div>
+                                <div><p className="text-sm text-gray-400">Income</p><p className="font-bold">${income.toFixed(2)}</p></div>
+                            </div>
+                            <div onMouseEnter={() => setHovered('expense')} onMouseLeave={() => setHovered(null)} className="flex items-center space-x-2 cursor-pointer">
+                                <div className="w-4 h-4 rounded-full bg-red-500"></div>
+                                <div><p className="text-sm text-gray-400">Expense</p><p className="font-bold">${expense.toFixed(2)}</p></div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            };
+
+            return (
+                <Page title="Dashboard">
+                    <div className="space-y-6">
+                        {Object.entries(summaryByCurrency).map(([currency, data]) => (
+                            <GlassCard key={currency}>
+                                <h3 className="text-xl font-bold mb-4 text-white">{currency} Overview</h3>
+                                <DonutChart income={data.income} expense={data.expense} currency={currency} />
+                            </GlassCard>
+                        ))}
+                        
+                        <GlassCard>
+                            <h3 className="text-xl font-bold mb-4 text-white">Active Budgets</h3>
+                            <div className="space-y-4">
+                                {budgetStatus.map(budget => {
+                                    const category = categories.find(c => c.id === budget.categoryId);
+                                    const percentage = budget.limit > 0 ? (budget.spent / budget.limit) * 100 : 0;
+                                    const barColor = percentage > 100 ? 'bg-red-500' : percentage > 75 ? 'bg-amber-500' : 'bg-green-500';
+                                     return (
+                                        <div key={budget.id}>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="font-semibold">{category?.icon} {category?.name || '...'}</span>
+                                                <span>${budget.spent.toFixed(2)} / ${budget.limit.toFixed(2)} {budget.currency}</span>
+                                            </div>
+                                            <div className="w-full bg-gray-700/50 rounded-full h-4 relative overflow-hidden">
+                                                <div className={`${barColor} h-full rounded-full transition-all duration-500`} style={{ width: `${Math.min(percentage, 100)}%` }}></div>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </GlassCard>
+                    </div>
+                </Page>
+            );
+        };
+
+
+        // --- UI Components ---
+        const GlassCard = ({ children, padding = "p-4", extraClasses = "" }) => (<div className={`relative bg-slate-800/50 backdrop-blur-lg rounded-2xl shadow-lg border border-white/10 ${padding} ${extraClasses}`}>{children}</div>);
+        const Modal = ({ isOpen, onClose, children, isSubModal }) => { 
+            useEffect(() => { const handleEsc = (e) => { if (e.keyCode === 27) onClose(); }; window.addEventListener('keydown', handleEsc); return () => window.removeEventListener('keydown', handleEsc); }, [onClose]); 
+            const alignmentClasses = isSubModal ? 'items-center' : 'items-end';
+            const containerClasses = isSubModal ? 'bg-slate-700 rounded-2xl border-2 border-amber-500' : 'bg-slate-800 rounded-t-2xl border-t-2 border-fuchsia-500';
+            const animationClasses = isSubModal ? (isOpen ? 'scale-100 opacity-100' : 'scale-95 opacity-0') : (isOpen ? 'translate-y-0' : 'translate-y-full');
+
+            return (<div className={`fixed inset-0 z-50 flex justify-center p-4 transition-opacity duration-300 ${alignmentClasses} ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} style={{ zIndex: 50 + (isSubModal ? 5 : 0) }}><div className="absolute inset-0 bg-black/70" onClick={onClose}></div><div className={`${containerClasses} shadow-2xl w-full max-w-md z-10 transition-all duration-300 ${animationClasses}`}><div className="p-6 relative"><button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white"><CloseIcon /></button>{children}</div></div></div>);
+        };
+
+        // --- Form & Detail Components ---
+        const FormInput = (props) => <input {...props} className="w-full p-3 bg-slate-700/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-fuchsia-500 border border-slate-600" />;
+        const FormTextarea = (props) => <textarea {...props} rows="3" className="w-full p-3 bg-slate-700/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-fuchsia-500 border border-slate-600" />;
+        const FormSelect = (props) => <select {...props} className="w-full p-3 bg-slate-700/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-fuchsia-500 border border-slate-600" />;
+        const FormButton = ({ children, ...props }) => <button {...props} className="w-full p-3 bg-fuchsia-500 hover:bg-fuchsia-600 rounded-xl text-white font-bold transition disabled:bg-gray-600 disabled:cursor-not-allowed shadow-lg shadow-fuchsia-500/30">{children}</button>;
+
+        const WalletForm = ({ data, onSave, currencies, openModal }) => {
+            const [formData, setFormData] = useState({ id: data.id || null, name: data.name || '', icon: data.icon || '💰', initialBalance: data.initialBalance || 0, currency: data.currency || 'USD', type: data.type || 'Virtual' });
+            const handleChange = e => setFormData({ ...formData, [e.target.name]: e.target.value });
+            const handleNumChange = e => setFormData({ ...formData, [e.target.name]: parseFloat(e.target.value) || 0 });
+            const handleSubmit = e => { e.preventDefault(); onSave('wallet', formData); };
+            return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-xl font-bold text-white">{data.id ? 'Edit' : 'Add'} Wallet</h3><FormInput name="name" value={formData.name} onChange={handleChange} placeholder="Wallet Name" required /><div className="flex space-x-4"><FormInput name="icon" value={formData.icon} onChange={handleChange} placeholder="Icon" className="w-1/4 text-center" /><FormInput type="number" step="0.01" name="initialBalance" value={formData.initialBalance} onChange={handleNumChange} placeholder="Initial Balance" className="flex-1" /><div className="flex items-center w-1/2"><FormSelect name="currency" value={formData.currency} onChange={handleChange} className="w-full">{currencies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</FormSelect><button type="button" onClick={() => openModal('currency', {}, { onSaveSuccess: (newCur) => setFormData(f => ({...f, currency: newCur.name})) })} className="ml-2 p-2 text-white bg-cyan-600 rounded-full flex-shrink-0">+</button></div></div><FormSelect name="type" value={formData.type} onChange={handleChange}><option>Virtual</option><option>Physical</option></FormSelect><FormButton type="submit">Save Wallet</FormButton></form>);
+        };
+        const TransactionForm = ({ data, wallets, categories, onSave, openModal }) => {
+            const [formData, setFormData] = useState({ id: data.id || null, description: data.description || '', amount: data.amount || '', type: data.type || 'expense', walletId: data.walletId || '', categoryId: data.categoryId || '', date: data.date ? toDateTimeLocalString(data.date) : toDateTimeLocalString(new Date()), details: data.details || '', location: data.location || '', attachment: data.attachment || null });
+            const handleChange = e => setFormData({ ...formData, [e.target.name]: e.target.value });
+            const handleFileChange = e => setFormData({ ...formData, attachment: e.target.files[0]?.name || null });
+            const handleNumChange = e => setFormData({ ...formData, [e.target.name]: parseFloat(e.target.value) || 0 });
+            const handleSubmit = e => { e.preventDefault(); onSave('transaction', { ...formData, date: new Date(formData.date) }); };
+            return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-xl font-bold text-white">{data.id ? 'Edit' : 'Add'} Transaction</h3><FormInput name="description" value={formData.description} onChange={handleChange} placeholder="Description" required /><div className="flex space-x-4"><FormInput type="number" step="0.01" name="amount" value={formData.amount} onChange={handleNumChange} placeholder="Amount" required /><FormSelect name="type" value={formData.type} onChange={handleChange}><option value="expense">Expense</option><option value="income">Income</option></FormSelect></div><FormInput type="datetime-local" name="date" value={formData.date} onChange={handleChange} required /><FormSelect name="walletId" value={formData.walletId} onChange={handleChange} required><option value="">-- Select Wallet --</option>{wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</FormSelect><div className="flex items-center space-x-2"><FormSelect name="categoryId" value={formData.categoryId} onChange={handleChange} required className="flex-1"><option value="">-- Select Category --</option>{categories.filter(c => c.type === formData.type).map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}</FormSelect><button type="button" onClick={() => openModal('category', {type: formData.type}, { onSaveSuccess: (newCat) => setFormData(f => ({...f, categoryId: newCat.id})) })} className="p-2 text-white bg-cyan-600 rounded-full flex-shrink-0">+</button></div><FormInput name="location" value={formData.location} onChange={handleChange} placeholder="Location (optional)" /><FormTextarea name="details" value={formData.details} onChange={handleChange} placeholder="Details (optional)" /><FormInput type="file" onChange={handleFileChange} /><FormButton type="submit">Save Transaction</FormButton></form>);
+        };
+        const CategoryForm = ({ data, onSave }) => { const [formData, setFormData] = useState({ id: data.id || null, name: data.name || '', icon: data.icon || '❓', type: data.type || 'expense' }); const handleChange = e => setFormData({ ...formData, [e.target.name]: e.target.value }); const handleSubmit = e => { e.preventDefault(); onSave('category', formData); }; return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-xl font-bold text-white">{data.id ? 'Edit' : 'Add'} Category</h3><FormInput name="name" value={formData.name} onChange={handleChange} placeholder="Category Name" required /><div className="flex space-x-4"><FormInput name="icon" value={formData.icon} onChange={handleChange} placeholder="Icon" className="w-1/4 text-center" /><FormSelect name="type" value={formData.type} onChange={handleChange} className="flex-1"><option value="expense">Expense</option><option value="income">Income</option></FormSelect></div><FormButton type="submit">Save Category</FormButton></form>);};
+        const CurrencyForm = ({ data, onSave }) => { const [formData, setFormData] = useState({ id: data.id || null, name: data.name || '' }); const handleChange = e => setFormData({ ...formData, name: e.target.value.toUpperCase() }); const handleSubmit = e => { e.preventDefault(); onSave('currency', formData); }; return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-xl font-bold text-white">{data.id ? 'Edit' : 'Add'} Currency</h3><FormInput name="name" value={formData.name} onChange={handleChange} placeholder="e.g., USD" maxLength="3" required /><FormButton type="submit">Save Currency</FormButton></form>);};
+        const BudgetForm = ({ data, onSave, categories, currencies }) => {
+            const [formData, setFormData] = useState({ id: data.id || null, categoryId: data.categoryId || '', limit: data.limit || '', currency: data.currency || 'USD', period: data.period || 'monthly', customInterval: data.customInterval || 1, appliesOn: data.appliesOn ? toDateString(data.appliesOn) : toDateString(new Date()), startDate: data.startDate ? toDateString(data.startDate) : '', endDate: data.endDate ? toDateString(data.endDate) : '' });
+            const handleChange = e => setFormData({ ...formData, [e.target.name]: e.target.value });
+            const handleNumChange = e => setFormData({ ...formData, [e.target.name]: parseInt(e.target.value, 10) || 1 });
+            const handleSubmit = e => { e.preventDefault(); onSave('budget', formData); };
+            const expenseCategories = categories.filter(c => c.type === 'expense');
+            return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-xl font-bold text-white">{data.id ? 'Edit' : 'Add'} Budget</h3><FormSelect name="categoryId" value={formData.categoryId} onChange={handleChange} required><option value="">-- Select Category --</option>{expenseCategories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}</FormSelect><div className="flex space-x-4"><FormInput type="number" step="0.01" name="limit" value={formData.limit} onChange={e => setFormData({...formData, limit: parseFloat(e.target.value) || 0})} placeholder="Spending Limit" required /><FormSelect name="currency" value={formData.currency} onChange={handleChange}>{currencies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</FormSelect></div><FormSelect name="period" value={formData.period} onChange={handleChange}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="every_x_days">Every X Days</option><option value="every_x_weeks">Every X Weeks</option><option value="custom_range">Custom Date Range</option></FormSelect>
+            {(formData.period === 'every_x_days' || formData.period === 'every_x_weeks') && <FormInput type="number" name="customInterval" value={formData.customInterval} onChange={handleNumChange} placeholder="Interval (e.g., 2)" />}
+            {formData.period === 'custom_range' ? <div className="grid grid-cols-2 gap-4"><label className="flex flex-col"><span className="text-sm text-gray-400 mb-1">Start Date</span><FormInput type="date" name="startDate" value={formData.startDate} onChange={handleChange} required /></label><label className="flex flex-col"><span className="text-sm text-gray-400 mb-1">End Date</span><FormInput type="date" name="endDate" value={formData.endDate} onChange={handleChange} required /></label></div> : <label className="flex flex-col"><span className="text-sm text-gray-400 mb-1">Budget Starts On</span><FormInput type="date" name="appliesOn" value={formData.appliesOn} onChange={handleChange} required /></label>}
+            <FormButton type="submit">Save Budget</FormButton></form>);
+        };
+        const DebtForm = ({ data, onSave, currencies, wallets, balances, openModal }) => {
+            const [formData, setFormData] = useState({ id: data.id || null, name: data.name || '', person: data.person || '', total: data.total || '', paid: data.paid || 0, currency: data.currency || 'USD', type: data.type || 'owedByMe', date: data.date ? new Date(data.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0], deadline: data.deadline ? new Date(data.deadline).toISOString().split('T')[0] : '', details: data.details || '', attachment: data.attachment || null });
+            const [createTx, setCreateTx] = useState({ enabled: false, walletId: '' });
+            
+            const handleChange = e => setFormData({ ...formData, [e.target.name]: e.target.value });
+            const handleFileChange = e => setFormData({ ...formData, attachment: e.target.files[0]?.name || null });
+            const handleNumChange = e => setFormData({ ...formData, [e.target.name]: parseFloat(e.target.value) || 0 });
+            const handleSubmit = e => { e.preventDefault(); onSave({ ...formData, date: new Date(formData.date), deadline: formData.deadline ? new Date(formData.deadline) : null }, createTx); };
+
+            const availableBalance = createTx.walletId ? balances[createTx.walletId] : 0;
+            const hasSufficientFunds = !createTx.enabled || !formData.total || parseFloat(formData.total) <= availableBalance;
+
+            return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-xl font-bold text-white">{data.id ? 'Edit' : 'Add'} Debt</h3><FormSelect name="type" value={formData.type} onChange={handleChange}><option value="owedByMe">I Owe</option><option value="owedToMe">Owed To Me</option></FormSelect><FormInput name="name" value={formData.name} onChange={handleChange} placeholder="Debt Name (e.g., Credit Card, Loan)" required /><FormInput name="person" value={formData.person} onChange={handleChange} placeholder={formData.type === 'owedByMe' ? 'Person/Entity I Owe' : 'Person Who Owes Me'} required /><div className="flex space-x-4"><FormInput type="number" step="0.01" name="total" value={formData.total} onChange={handleNumChange} placeholder="Total Amount" required /><div className="flex items-center w-1/2"><FormSelect name="currency" value={formData.currency} onChange={handleChange}>{currencies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</FormSelect><button type="button" onClick={() => openModal('currency', {}, { onSaveSuccess: (newCur) => setFormData(f => ({...f, currency: newCur.name})) })} className="ml-2 p-2 text-white bg-cyan-600 rounded-full flex-shrink-0">+</button></div></div>
+            {formData.type === 'owedToMe' && !data.id && (
+                <div className="p-3 bg-slate-700/50 rounded-lg"><label className="flex items-center space-x-3"><input type="checkbox" checked={createTx.enabled} onChange={(e) => setCreateTx({ enabled: e.target.checked, walletId: '' })} className="h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500" /><span>Record as an outgoing transaction?</span></label>
+                {createTx.enabled && <div className="mt-3 space-y-2"><FormSelect name="walletId" value={createTx.walletId} onChange={(e) => setCreateTx(p => ({...p, walletId: e.target.value}))} required><option value="">-- Lend from Wallet --</option>{wallets.filter(w => w.currency === formData.currency).map(w => <option key={w.id} value={w.id}>{w.name} (Bal: {balances[w.id].toFixed(2)})</option>)}</FormSelect>
+                {!hasSufficientFunds && <p className="text-xs text-red-400">Insufficient funds in selected wallet.</p>}</div>}</div>
+            )}
+            <div className="grid grid-cols-2 gap-4"><label className="flex flex-col"><span className="text-sm text-gray-400 mb-1">Date</span><FormInput type="date" name="date" value={formData.date} onChange={handleChange} required /></label><label className="flex flex-col"><span className="text-sm text-gray-400 mb-1">Deadline (Optional)</span><FormInput type="date" name="deadline" value={formData.deadline} onChange={handleChange} /></label></div><FormTextarea name="details" value={formData.details} onChange={handleChange} placeholder="Details (optional)" /><FormInput type="file" onChange={handleFileChange} /><FormButton type="submit" disabled={!hasSufficientFunds}>Save Debt</FormButton></form>);
+        };
+        const DebtPaymentForm = ({ debts, wallets, balances, onSave }) => {
+            const [formData, setFormData] = useState({ debtId: '', walletId: '', amount: '', attachment: null });
+            const { debtId, walletId, amount } = formData;
+            
+            const selectedDebt = debts.find(d => d.id === debtId);
+            const filteredWallets = wallets.filter(w => w.currency === selectedDebt?.currency);
+            const availableBalance = walletId ? balances[walletId] : 0;
+            const hasSufficientFunds = selectedDebt?.type === 'owedToMe' || !amount || parseFloat(amount) <= availableBalance;
+
+            const handleChange = e => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+            const handleFileChange = e => setFormData(prev => ({ ...prev, attachment: e.target.files[0]?.name || null }));
+            const handleNumChange = e => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+            const handleSubmit = e => { e.preventDefault(); onSave({ ...formData, amount: parseFloat(amount), date: new Date() }); };
+            
+            const activeDebts = debts.filter(d => d.paid < d.total);
+
+            return (
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <h3 className="text-xl font-bold text-white">Add Debt Payment</h3>
+                    <FormSelect name="debtId" value={debtId} onChange={handleChange} required><option value="">-- Select Debt --</option>{activeDebts.map(d => <option key={d.id} value={d.id}>{d.name} ({d.type === 'owedByMe' ? 'I Owe' : 'Owed To Me'})</option>)}</FormSelect>
+                    {selectedDebt && (<>
+                        <FormSelect name="walletId" value={walletId} onChange={handleChange} required><option value="">-- Select Wallet ({selectedDebt.currency}) --</option>{filteredWallets.map(w => <option key={w.id} value={w.id}>{w.name} (Bal: {balances[w.id].toFixed(2)})</option>)}</FormSelect>
+                        <FormInput type="number" step="0.01" name="amount" value={amount} onChange={handleNumChange} placeholder={`Max: ${(selectedDebt.total - selectedDebt.paid).toFixed(2)}`} max={selectedDebt.total - selectedDebt.paid} required />
+                        {!hasSufficientFunds && <p className="text-xs text-red-400">Insufficient funds in selected wallet.</p>}
+                        <FormInput type="file" onChange={handleFileChange} />
+                        <FormButton type="submit" disabled={!hasSufficientFunds}>Record Payment</FormButton>
+                    </>)}
+                </form>
+            );
+        };
+        const TransactionDetailView = ({ transaction, wallets, categories, openModal }) => { 
+            const category = categories.find(c => c.id === transaction.categoryId) || {}; 
+            const wallet = wallets.find(w => w.id === transaction.walletId) || {}; 
+            const isIncome = transaction.type === 'income'; 
+            const DetailRow = ({ label, value }) => value ? (<div className="py-2 border-b border-white/10"><p className="text-sm text-gray-400">{label}</p><p className="text-white font-medium">{value}</p></div>) : null; 
+            return (
+                <div className="space-y-4">
+                    <div className="text-center">
+                        <span className="text-5xl">{category.icon}</span>
+                        <h2 className="text-2xl font-bold text-white mt-2">{transaction.description}</h2>
+                        <p className={`text-3xl font-bold ${isIncome ? 'text-green-400' : 'text-red-400'}`}>{isIncome ? '+' : '-'}{transaction.amount.toFixed(2)} <span className="text-lg text-gray-500">{wallet.currency}</span></p>
+                    </div>
+                    <div className="space-y-1">
+                        <DetailRow label="Date & Time" value={formatDateTime(transaction.date)} />
+                        <DetailRow label="Wallet" value={wallet.name} />
+                        <DetailRow label="Category" value={category.name} />
+                        <DetailRow label="Location" value={transaction.location} />
+                        <DetailRow label="Details" value={transaction.details} />
+                        <DetailRow label="Attachment" value={transaction.attachment} />
+                    </div>
+                    <FormButton onClick={() => openModal('transaction', transaction)}>Edit Transaction</FormButton>
+                </div>
+            );
+        };
+        const ProfileView = ({ auth, user }) => {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [isSignUp, setIsSignUp] = useState(false);
+            const [error, setError] = useState('');
+
+            const handleAuth = async (e) => {
+                e.preventDefault();
+                setError('');
+                const { createUserWithEmailAndPassword, signInWithEmailAndPassword } = window.firebase;
+                try {
+                    if (isSignUp) {
+                        await createUserWithEmailAndPassword(auth, email, password);
+                    } else {
+                        await signInWithEmailAndPassword(auth, email, password);
+                    }
+                } catch (err) {
+                    setError(err.message);
+                }
+            };
+
+            const handleLogout = () => {
+                window.firebase.signOut(auth);
+            };
+
+            if (user) {
+                return (
+                    <Page title="Profile">
+                        <GlassCard>
+                            <p className="text-lg">Logged in as: <span className="font-bold">{user.email}</span></p>
+                            <button onClick={handleLogout} className="mt-4 w-full p-3 bg-red-500 hover:bg-red-600 rounded-xl text-white font-bold transition">Log Out</button>
+                        </GlassCard>
+                    </Page>
+                );
+            }
+
+            return (
+                 <div className="w-full h-screen flex items-center justify-center p-4">
+                    <div className="w-full max-w-md">
+                        <GlassCard>
+                             <form onSubmit={handleAuth} className="space-y-6">
+                                <h2 className="text-2xl font-bold text-center text-white">{isSignUp ? 'Create Account' : 'Log In'}</h2>
+                                {error && <p className="text-red-400 text-center">{error}</p>}
+                                <FormInput type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
+                                <FormInput type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
+                                <FormButton type="submit">{isSignUp ? 'Sign Up' : 'Log In'}</FormButton>
+                                <p className="text-center text-sm text-gray-400">
+                                    {isSignUp ? 'Already have an account?' : "Don't have an account?"}
+                                    <button type="button" onClick={() => setIsSignUp(!isSignUp)} className="font-semibold text-fuchsia-400 hover:text-fuchsia-300 ml-1">
+                                        {isSignUp ? 'Log In' : 'Sign Up'}
+                                    </button>
+                                </p>
+                            </form>
+                        </GlassCard>
+                    </div>
+                 </div>
+            );
+        };
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
