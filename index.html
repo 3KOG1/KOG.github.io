@@ -42,76 +42,9 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc, query, serverTimestamp, writeBatch, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        window.firebase = {
-            initializeApp,
-            getAuth,
-            onAuthStateChanged,
-            createUserWithEmailAndPassword,
-            signInWithEmailAndPassword,
-            signOut,
-            setPersistence,
-            browserSessionPersistence,
-            browserLocalPersistence,
-            getFirestore,
-            collection,
-            addDoc,
-            onSnapshot,
-            doc,
-            deleteDoc,
-            updateDoc,
-            query,
-            serverTimestamp,
-            writeBatch,
-            Timestamp
-        };
-    </script>
-
-
-    <script>
-        if ('serviceWorker' in navigator) {
-            const swCode = `
-                const CACHE_NAME = 'finance-tracker-cache-v1';
-                const urlsToCache = ['/', '/index.html'];
-
-                self.addEventListener('install', event => {
-                    event.waitUntil(
-                        caches.open(CACHE_NAME).then(cache => {
-                            console.log('Opened cache');
-                            return cache.addAll(urlsToCache);
-                        })
-                    );
-                });
-
-                self.addEventListener('fetch', event => {
-                    event.respondWith(
-                        caches.match(event.request).then(response => {
-                            return response || fetch(event.request);
-                        })
-                    );
-                });
-            `;
-            const blob = new Blob([swCode], { type: 'application/javascript' });
-            const swUrl = URL.createObjectURL(blob);
-
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register(swUrl)
-                    .then(registration => console.log('ServiceWorker registration successful with scope: ', registration.scope))
-                    .catch(error => console.log('ServiceWorker registration failed: ', error));
-            });
-        }
-    </script>
-    
     <script type="text/babel" data-presets="react">
-        const { useState, useEffect, useMemo, useCallback, createContext, useContext } = React;
+        const { useState, useEffect, useMemo, useCallback } = React;
         
-        // --- Firebase Configuration & Context ---
-        const FirebaseContext = createContext(null);
-
         // --- SVG Icons ---
         const DashboardIcon = ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>;
         const WalletIcon = ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"></path><path d="M3 5v14a2 2 0 0 0 2 2h16v-5h-2.43a1 1 0 0 1-.94-.66l-.86-2.68a1 1 0 0 1 .94-1.34H21V5Z"></path></svg>;
@@ -131,124 +64,50 @@
         const toDateString = (date) => new Date(date).toISOString().split('T')[0];
         const isSameDay = (d1, d2) => d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
 
-        // --- Default Data for New Users ---
-        const DEFAULT_CATEGORIES = [ { name: 'Salary', icon: '💼', type: 'income' }, { name: 'Food & Dining', icon: '🍔', type: 'expense' }, { name: 'Transportation', icon: '🚗', type: 'expense' }, { name: 'Shopping', icon: '🛒', type: 'expense' }, { name: 'Debt Payments', icon: '💳', type: 'expense' }, { name: 'Lending', icon: '💸', type: 'expense' }, ];
-        const DEFAULT_CURRENCIES = [ { name: 'USD' }, { name: 'EUR' } ];
-
-        // --- Firebase Provider & Hooks ---
-        const FirebaseProvider = ({ children }) => {
-            const [authData, setAuthData] = useState({ db: null, auth: null, user: null, isAuthReady: false, error: null });
-
-            useEffect(() => {
-                const { initializeApp, getAuth, onAuthStateChanged, getFirestore } = window.firebase;
+        // --- Local Data Storage Hook ---
+        const useLocalStorage = (key, initialValue) => {
+            const [storedValue, setStoredValue] = useState(() => {
                 try {
-                    const firebaseConfig = {
-
-                      apiKey: "AIzaSyBtoKxxiHh6tFjSRafLYp_kg_aPjsRex24",
-
-                      authDomain: "manager-29c83.firebaseapp.com",
-
-                      projectId: "manager-29c83",
-
-                      storageBucket: "manager-29c83.firebasestorage.app",
-
-                      messagingSenderId: "153887932249",
-
-                      appId: "1:153887932249:web:9063e023740b7b7574d648"
-
-                    };
-
-                    const app = initializeApp(firebaseConfig);
-                    const db = getFirestore(app);
-                    const auth = getAuth(app);
-
-                    const unsubscribe = onAuthStateChanged(auth, (user) => {
-                        setAuthData({ db, auth, user, isAuthReady: true, error: null });
-                    });
-                    return () => unsubscribe();
-                } catch (e) {
-                    console.error("Firebase initialization failed:", e);
-                    setAuthData({ db: null, auth: null, user: null, isAuthReady: true, error: "Could not connect to the database." });
+                    const item = window.localStorage.getItem(key);
+                    if (item) {
+                        return JSON.parse(item, (k, v) => {
+                            if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(v)) {
+                                return new Date(v);
+                            }
+                            return v;
+                        });
+                    }
+                    window.localStorage.setItem(key, JSON.stringify(initialValue));
+                    return initialValue;
+                } catch (error) {
+                    console.log(error);
+                    return initialValue;
                 }
-            }, []);
-
-            return <FirebaseContext.Provider value={authData}>{children}</FirebaseContext.Provider>;
-        };
-
-        const useCollection = (collectionName, defaultData = []) => {
-            const { db, user } = useContext(FirebaseContext);
-            const userId = user?.uid;
-            const [data, setData] = useState([]);
-            const [loading, setLoading] = useState(true);
+            });
 
             useEffect(() => {
-                if (!db || !userId) {
-                    if(!userId) setData([]); // Clear data if user logs out
-                    setLoading(false);
-                    return;
-                };
-                const { query, collection, onSnapshot, writeBatch, doc } = window.firebase;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                setLoading(true);
-                const collectionPath = `/artifacts/${appId}/users/${userId}/${collectionName}`;
-                const q = query(collection(db, collectionPath));
-                const unsubscribe = onSnapshot(q, (snapshot) => {
-                    const items = snapshot.docs.map(doc => {
-                        const docData = doc.data();
-                        for (const key in docData) {
-                            if (docData[key]?.toDate) {
-                                docData[key] = docData[key].toDate();
-                            }
-                        }
-                        return { id: doc.id, ...docData };
-                    });
-                    
-                    if (items.length === 0 && !snapshot.metadata.hasPendingWrites && defaultData.length > 0) {
-                        const batch = writeBatch(db);
-                        defaultData.forEach(item => {
-                            const docRef = doc(collection(db, collectionPath));
-                            batch.set(docRef, item);
-                        });
-                        batch.commit().catch(e => console.error("Failed to add default data", e));
-                    } else {
-                        setData(items);
-                    }
-                    setLoading(false);
-                }, (error) => {
-                    console.error(`Error fetching ${collectionName}:`, error);
-                    setLoading(false);
-                });
-                return () => unsubscribe();
-            }, [db, userId]);
+                try {
+                    window.localStorage.setItem(key, JSON.stringify(storedValue));
+                } catch (error) {
+                    console.log(error);
+                }
+            }, [key, storedValue]);
 
-            return { data, loading };
+            return [storedValue, setStoredValue];
         };
-
-        // --- Main App Component ---
+        
         function App() {
-            return (
-                <FirebaseProvider>
-                    <AppContent />
-                </FirebaseProvider>
-            );
-        }
-
-        function AppContent() {
-            const { db, auth, user, isAuthReady, error } = useContext(FirebaseContext);
-            const userId = user?.uid;
-            
-            const { data: wallets, loading: walletsLoading } = useCollection('wallets');
-            const { data: categories, loading: categoriesLoading } = useCollection('categories', DEFAULT_CATEGORIES);
-            const { data: transactions, loading: transactionsLoading } = useCollection('transactions');
-            const { data: debts, loading: debtsLoading } = useCollection('debts');
-            const { data: currencies, loading: currenciesLoading } = useCollection('currencies', DEFAULT_CURRENCIES);
-            const { data: budgets, loading: budgetsLoading } = useCollection('budgets');
+            const [wallets, setWallets] = useLocalStorage('wallets', []);
+            const [categories, setCategories] = useLocalStorage('categories', []);
+            const [transactions, setTransactions] = useLocalStorage('transactions', []);
+            const [debts, setDebts] = useLocalStorage('debts', []);
+            const [currencies, setCurrencies] = useLocalStorage('currencies', []);
+            const [budgets, setBudgets] = useLocalStorage('budgets', []);
+            const [user, setUser] = useLocalStorage('user', null);
 
             const [activeView, setActiveView] = useState('dashboard');
             const [modalStack, setModalStack] = useState([]);
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-            const isLoading = walletsLoading || categoriesLoading || transactionsLoading || debtsLoading || currenciesLoading || budgetsLoading;
 
             const walletCalculations = useMemo(() => {
                 const balances = {};
@@ -261,74 +120,49 @@
             const openModal = (type, data = {}, options = {}) => { setModalStack(prev => [...prev, { type, data, options }]); };
             const closeModal = () => { setModalStack(prev => prev.slice(0, -1)); };
 
-            const handleSave = async (itemType, data) => {
-                if (!db || !userId) return;
-                const collectionName = `${itemType}s`;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const collectionPath = `/artifacts/${appId}/users/${userId}/${collectionName}`;
-                const { id, ...payload } = data;
-                const { serverTimestamp, updateDoc, doc, addDoc, collection, Timestamp } = window.firebase;
+            const handleSave = (itemType, data) => {
+                const setStateMap = {
+                    wallet: setWallets, category: setCategories, transaction: setTransactions,
+                    debt: setDebts, currency: setCurrencies, budget: setBudgets,
+                };
+                const setStateFunc = setStateMap[itemType];
+                if (!setStateFunc) return;
 
-                for (const key in payload) {
-                    if (payload[key] instanceof Date) {
-                        payload[key] = Timestamp.fromDate(payload[key]);
-                    }
-                }
-                
                 const currentModal = modalStack[modalStack.length - 1];
                 const { onSaveSuccess } = currentModal?.options || {};
 
-                try {
-                    let savedItem;
-                    if (id) {
-                        await updateDoc(doc(db, collectionPath, id), payload);
-                        savedItem = { id, ...data };
-                    } else {
-                        const docRef = await addDoc(collection(db, collectionPath), { ...payload, createdAt: serverTimestamp() });
-                        savedItem = { id: docRef.id, ...data };
-                    }
-                    closeModal();
-                    if (onSaveSuccess) { onSaveSuccess(savedItem); }
-                } catch (e) {
-                    console.error("Error saving item:", e);
-                    alert("Failed to save item.");
+                let savedItem;
+                if (data.id) {
+                    savedItem = data;
+                    setStateFunc(prev => prev.map(item => item.id === data.id ? data : item));
+                } else {
+                    savedItem = { ...data, id: `local_${Date.now()}`, createdAt: new Date() };
+                    setStateFunc(prev => [...prev, savedItem]);
                 }
+                
+                closeModal();
+                if (onSaveSuccess) { onSaveSuccess(savedItem); }
             };
             
-            const handleSaveDebt = async (debtData, createTransaction) => {
-                if (!db || !userId) return;
-                const { writeBatch, doc, collection, serverTimestamp, Timestamp } = window.firebase;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const batch = writeBatch(db);
-
-                const isEditing = !!debtData.id;
-                const debtRef = isEditing ? doc(db, `/artifacts/${appId}/users/${userId}/debts`, debtData.id) : doc(collection(db, `/artifacts/${appId}/users/${userId}/debts`));
+            const handleSaveDebt = (debtData, createTransaction) => {
+                const debtToSave = debtData.id ? debtData : { ...debtData, id: `local_debt_${Date.now()}` };
                 
-                const debtPayload = { ...debtData };
-                if (debtPayload.date instanceof Date) debtPayload.date = Timestamp.fromDate(debtPayload.date);
-                if (debtPayload.deadline instanceof Date) debtPayload.deadline = Timestamp.fromDate(debtPayload.deadline);
-
-                batch.set(debtRef, debtPayload);
-
-                if (!isEditing && createTransaction.enabled) {
-                    const lendingCategory = categories.find(c => c.name === 'Lending');
-                    if(!lendingCategory) { alert("'Lending' category not found. Please create it in Parameters."); return; }
-                    
-                    const transRef = doc(collection(db, `/artifacts/${appId}/users/${userId}/transactions`));
-                    const newTransaction = {
-                        description: `Loan to ${debtData.person}`, amount: debtData.total, type: 'expense', walletId: createTransaction.walletId, categoryId: lendingCategory.id, date: debtData.date, details: `Initial amount for debt: ${debtData.name}`, createdAt: serverTimestamp()
-                    };
-                    batch.set(transRef, newTransaction);
+                if (debtData.id) { setDebts(prev => prev.map(d => d.id === debtData.id ? debtToSave : d)); } 
+                else {
+                    setDebts(prev => [...prev, debtToSave]);
+                    if (createTransaction.enabled) {
+                         const lendingCategory = categories.find(c => c.name === 'Lending');
+                         if(!lendingCategory) { alert("'Lending' category not found. Please create it in Parameters."); return; }
+                         const newTransaction = {
+                            id: `local_trans_${Date.now()}`, description: `Loan to ${debtToSave.person}`, amount: debtToSave.total, type: 'expense', walletId: createTransaction.walletId, categoryId: lendingCategory.id, date: debtToSave.date, details: `Initial amount for debt: ${debtToSave.name}`,
+                        };
+                        setTransactions(prev => [...prev, newTransaction]);
+                    }
                 }
-
-                try { await batch.commit(); closeModal(); } 
-                catch(e) { console.error("Error saving debt and transaction:", e); alert("Failed to save debt."); }
+                closeModal();
             };
 
-            const handleDebtPayment = async (paymentData) => {
-                if (!db || !userId) return;
-                const { writeBatch, doc, collection, serverTimestamp, Timestamp } = window.firebase;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const handleDebtPayment = (paymentData) => {
                 const { debtId, walletId, amount, date, attachment } = paymentData;
                 const debt = debts.find(d => d.id === debtId);
                 if(!debt) return;
@@ -336,46 +170,35 @@
                 const debtPaymentCategory = categories.find(c => c.name === 'Debt Payments');
                 if(!debtPaymentCategory) { alert("'Debt Payments' category not found. Please create it in Parameters."); return; }
                 
-                const batch = writeBatch(db);
-
-                const transRef = doc(collection(db, `/artifacts/${appId}/users/${userId}/transactions`));
                 const newTransaction = {
-                    description: `Payment for ${debt.name}`, amount, type: debt.type === 'owedByMe' ? 'expense' : 'income', walletId, categoryId: debtPaymentCategory.id, date: Timestamp.fromDate(date), details: `Payment related to debt with ${debt.person}`, attachment, createdAt: serverTimestamp()
+                    id: `local_trans_${Date.now()}`, description: `Payment for ${debt.name}`, amount: amount, type: debt.type === 'owedByMe' ? 'expense' : 'income', walletId: walletId, categoryId: debtPaymentCategory.id, date: date, details: `Payment related to debt with ${debt.person}`, attachment: attachment,
                 };
-                batch.set(transRef, newTransaction);
+                setTransactions(prev => [...prev, newTransaction]);
 
-                const debtRef = doc(db, `/artifacts/${appId}/users/${userId}/debts`, debtId);
-                batch.update(debtRef, { paid: debt.paid + amount });
-                
-                try { await batch.commit(); closeModal(); } 
-                catch(e) { console.error("Error processing debt payment:", e); alert("Failed to process payment."); }
+                const updatedDebt = { ...debt, paid: debt.paid + amount };
+                setDebts(prev => prev.map(d => d.id === debtId ? updatedDebt : d));
+
+                closeModal();
             };
 
-            const handleDelete = async (type, id) => {
+            const handleDelete = (type, id) => {
                 if (!window.confirm(`Are you sure you want to delete this ${type}?`)) return;
                 
                 if (type === 'category') { if (transactions.some(t => t.categoryId === id)) { alert("Cannot delete category. It is currently in use by one or more transactions."); return; } }
                 if (type === 'currency') { const currencyToDelete = currencies.find(c => c.id === id)?.name; if (wallets.some(w => w.currency === currencyToDelete) || debts.some(d => d.currency === currencyToDelete)) { alert("Cannot delete currency. It is in use by a wallet or debt."); return; } }
                 
-                try {
-                    const { doc, deleteDoc } = window.firebase;
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                    await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/${type}s`, id));
-                } catch(e) {
-                    console.error("Error deleting item:", e);
-                    alert("Failed to delete item.");
+                const setStateMap = {
+                    wallet: setWallets, category: setCategories, transaction: setTransactions,
+                    debt: setDebts, currency: setCurrencies, budget: setBudgets
+                };
+                const setStateFunc = setStateMap[type];
+                if (setStateFunc) {
+                    setStateFunc(prev => prev.filter(item => item.id !== id));
                 }
             };
-
-            if (!isAuthReady || isLoading) {
-                return <div className="bg-slate-900 min-h-screen flex flex-col items-center justify-center text-center p-4"><div className="animate-spin rounded-full h-24 w-24 border-t-2 border-b-2 border-fuchsia-500 mb-6"></div><p className="text-xl font-semibold text-gray-300">Loading your secure data...</p></div>;
-            }
-            if (error) {
-                return <div className="bg-slate-900 min-h-screen flex flex-col items-center justify-center text-center p-4"><div className="text-5xl mb-6">😞</div><p className="text-xl font-semibold text-red-400">{error}</p></div>
-            }
-
+            
             if (!user) {
-                return <ProfileView auth={auth} />;
+                return <ProfileView onLogin={setUser} />;
             }
 
             const renderView = () => {
@@ -386,7 +209,7 @@
                     case 'ledger': return <LedgerView debts={debts} {...props} />;
                     case 'calendar': return <CalendarView transactions={transactions} wallets={wallets} categories={categories} openModal={openModal} />;
                     case 'parameters': return <ParametersView categories={categories} currencies={currencies} budgets={budgets} {...props} />;
-                    case 'profile': return <ProfileView auth={auth} user={user} />;
+                    case 'profile': return <ProfileView user={user} onLogout={() => setUser(null)} />;
                     default: return <DashboardView wallets={wallets} transactions={transactions} debts={debts} categories={categories} budgets={budgets} calculations={walletCalculations} />;
                 }
             };
@@ -453,7 +276,7 @@
         };
 
         const Page = ({ title, children, actionButton }) => (<div className="p-4 md:p-8 animate-fade-in"><div className="flex justify-between items-center mb-6"><h1 className="text-3xl font-bold text-white">{title}</h1>{actionButton}</div>{children}</div>);
-        const MoneyView = ({ wallets, calculations, transactions, categories, openModal, handleDelete }) => { const sortedTransactions = useMemo(() => [...transactions].sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0)), [transactions]); const getCategory = useCallback((id) => categories.find(c => c.id === id) || { icon: '❓', name: 'Uncategorized' }, [categories]); const getWallet = useCallback((id) => wallets.find(w => w.id === id) || { name: 'Unknown', currency: 'USD' }, [wallets]); return (<Page title="My Wallets" actionButton={<button onClick={() => openModal('transaction')} className="bg-fuchsia-500 hover:bg-fuchsia-600 text-white font-bold py-2 px-4 rounded-xl transition flex items-center shadow-lg shadow-fuchsia-500/30"><PlusIcon /><span className="ml-2 hidden sm:inline">Add Transaction</span></button>}><div className="space-y-8"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{wallets.map(wallet => (<GlassCard key={wallet.id}><div className="flex items-start justify-between"><div className="flex items-center"><span className="text-3xl mr-4">{wallet.icon}</span><div><p className="font-semibold text-white">{wallet.name}</p><p className="text-xs text-gray-400">Last activity: {formatDateTime(wallet.createdAt)}</p></div></div><button onClick={() => openModal('wallet', wallet)} className="text-gray-500 hover:text-cyan-400"><EditIcon /></button></div><p className="text-2xl font-bold text-right mt-4 text-green-400">{calculations.balances[wallet.id]?.toFixed(2)} <span className="text-sm text-gray-500">{wallet.currency}</span></p></GlassCard>))}<button onClick={() => openModal('wallet')} className="border-2 border-dashed border-gray-600 rounded-xl flex items-center justify-center text-gray-400 hover:bg-white/10 hover:text-white transition h-full min-h-[110px]"><PlusIcon /><span className="ml-2">Add Wallet</span></button></div><div><h2 className="text-xl font-bold text-gray-300 mb-4">Recent History</h2><div className="space-y-3">{sortedTransactions.slice(0, 5).map(t => { const category = getCategory(t.categoryId); const wallet = getWallet(t.walletId); const isIncome = t.type === 'income'; return (<button key={t.id} onClick={() => openModal('transactionDetail', t)} className="w-full text-left"><GlassCard padding="p-3"><div className="flex items-center justify-between"><div className="flex items-center"><span className="text-2xl mr-4">{category.icon}</span><div><p className="font-semibold text-white">{t.description}</p><p className="text-xs text-gray-400">{category.name} &bull; {wallet.name}</p></div></div><p className={`font-bold ${isIncome ? 'text-green-400' : 'text-red-400'}`}>{isIncome ? '+' : '-'}{t.amount.toFixed(2)} <span className="text-xs text-gray-500">{wallet.currency}</span></p></div></GlassCard></button>);})}</div></div></div></Page>);};
+        const MoneyView = ({ wallets, calculations, transactions, categories, openModal, handleDelete }) => { const sortedTransactions = useMemo(() => [...transactions].sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0)), [transactions]); const getCategory = useCallback((id) => categories.find(c => c.id === id) || { icon: '❓', name: 'Uncategorized' }, [categories]); const getWallet = useCallback((id) => wallets.find(w => w.id === id) || { name: 'Unknown', currency: 'USD' }, [wallets]); return (<Page title="My Wallets" actionButton={<button onClick={() => openModal('transaction')} className="bg-fuchsia-500 hover:bg-fuchsia-600 text-white font-bold py-2 px-4 rounded-xl transition flex items-center shadow-lg shadow-fuchsia-500/30"><PlusIcon /><span className="ml-2 hidden sm:inline">Add Transaction</span></button>}><div className="space-y-8"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{wallets.map(wallet => (<GlassCard key={wallet.id}><div className="flex items-start justify-between"><div className="flex items-center"><span className="text-3xl mr-4">{wallet.icon}</span><div><p className="font-semibold text-white">{wallet.name}</p><p className="text-xs text-gray-400">Last activity: {formatDateTime(wallet.createdAt)}</p></div></div><div className="flex space-x-2"><button onClick={() => openModal('wallet', wallet)} className="text-gray-500 hover:text-cyan-400"><EditIcon /></button><button onClick={() => handleDelete('wallet', wallet.id)} className="text-gray-500 hover:text-red-500"><TrashIcon /></button></div></div><p className="text-2xl font-bold text-right mt-4 text-green-400">{calculations.balances[wallet.id]?.toFixed(2)} <span className="text-sm text-gray-500">{wallet.currency}</span></p></GlassCard>))}<button onClick={() => openModal('wallet')} className="border-2 border-dashed border-gray-600 rounded-xl flex items-center justify-center text-gray-400 hover:bg-white/10 hover:text-white transition h-full min-h-[110px]"><PlusIcon /><span className="ml-2">Add Wallet</span></button></div><div><h2 className="text-xl font-bold text-gray-300 mb-4">Recent History</h2><div className="space-y-3">{sortedTransactions.slice(0, 5).map(t => { const category = getCategory(t.categoryId); const wallet = getWallet(t.walletId); const isIncome = t.type === 'income'; return (<button key={t.id} onClick={() => openModal('transactionDetail', t)} className="w-full text-left"><GlassCard padding="p-3"><div className="flex items-center justify-between"><div className="flex items-center"><span className="text-2xl mr-4">{category.icon}</span><div><p className="font-semibold text-white">{t.description}</p><p className="text-xs text-gray-400">{category.name} &bull; {wallet.name}</p></div></div><p className={`font-bold ${isIncome ? 'text-green-400' : 'text-red-400'}`}>{isIncome ? '+' : '-'}{t.amount.toFixed(2)} <span className="text-xs text-gray-500">{wallet.currency}</span></p></div></GlassCard></button>);})}</div></div></div></Page>);};
         const CalendarView = ({ transactions, wallets, categories, openModal }) => {
             const [currentDate, setCurrentDate] = useState(new Date());
             const [selectedDate, setSelectedDate] = useState(new Date());
@@ -832,29 +655,14 @@
                 </div>
             );
         };
-        const ProfileView = ({ auth, user }) => {
+        const ProfileView = ({ onLogin, user, onLogout }) => {
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
             const [isSignUp, setIsSignUp] = useState(false);
-            const [error, setError] = useState('');
-
-            const handleAuth = async (e) => {
+            
+            const handleAuth = (e) => {
                 e.preventDefault();
-                setError('');
-                const { createUserWithEmailAndPassword, signInWithEmailAndPassword } = window.firebase;
-                try {
-                    if (isSignUp) {
-                        await createUserWithEmailAndPassword(auth, email, password);
-                    } else {
-                        await signInWithEmailAndPassword(auth, email, password);
-                    }
-                } catch (err) {
-                    setError(err.message);
-                }
-            };
-
-            const handleLogout = () => {
-                window.firebase.signOut(auth);
+                onLogin({ email });
             };
 
             if (user) {
@@ -862,7 +670,7 @@
                     <Page title="Profile">
                         <GlassCard>
                             <p className="text-lg">Logged in as: <span className="font-bold">{user.email}</span></p>
-                            <button onClick={handleLogout} className="mt-4 w-full p-3 bg-red-500 hover:bg-red-600 rounded-xl text-white font-bold transition">Log Out</button>
+                            <button onClick={onLogout} className="mt-4 w-full p-3 bg-red-500 hover:bg-red-600 rounded-xl text-white font-bold transition">Log Out</button>
                         </GlassCard>
                     </Page>
                 );
@@ -874,9 +682,12 @@
                         <GlassCard>
                              <form onSubmit={handleAuth} className="space-y-6">
                                 <h2 className="text-2xl font-bold text-center text-white">{isSignUp ? 'Create Account' : 'Log In'}</h2>
-                                {error && <p className="text-red-400 text-center">{error}</p>}
                                 <FormInput type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
                                 <FormInput type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
+                                <FormSelect>
+                                    <option value="local">Keep me logged in</option>
+                                    <option value="session">Log out when I close the browser</option>
+                                </FormSelect>
                                 <FormButton type="submit">{isSignUp ? 'Sign Up' : 'Log In'}</FormButton>
                                 <p className="text-center text-sm text-gray-400">
                                     {isSignUp ? 'Already have an account?' : "Don't have an account?"}
